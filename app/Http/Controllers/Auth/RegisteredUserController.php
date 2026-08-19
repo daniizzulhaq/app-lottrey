@@ -26,6 +26,9 @@ class RegisteredUserController extends Controller
     /**
      * Handle an incoming registration request.
      *
+     * Registrasi publik hanya untuk membuat akun member/user biasa.
+     * Role admin tidak bisa dibuat lewat form ini.
+     *
      * @throws ValidationException
      */
     public function store(Request $request): RedirectResponse
@@ -40,6 +43,9 @@ class RegisteredUserController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+            'role' => 'user',
+            'status' => 'active',
+            'balance' => 0,
         ]);
 
         event(new Registered($user));
