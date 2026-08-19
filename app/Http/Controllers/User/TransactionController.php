@@ -10,16 +10,18 @@ class TransactionController extends Controller
 {
     public function index(Request $request)
     {
+        $user = $request->user();
+
         $transactions = Transaction::where(
                 'user_id',
-                $request->user()->id
+                $user->id
             )
             ->latest()
             ->paginate(20);
 
         return view(
             'user.transactions.index',
-            compact('transactions')
+            compact('user', 'transactions')
         );
     }
 

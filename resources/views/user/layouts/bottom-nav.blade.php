@@ -59,17 +59,19 @@
         </a>
 
 
-        <a href="#"
-           class="bottom-item">
+        <a href="{{ route('transactions.index') }}"
+   class="bottom-item
+   {{ request()->routeIs('transactions.*')
+        ? 'active'
+        : '' }}">
 
-            <span class="bottom-icon">
-                👤
-            </span>
+    <span class="bottom-icon">
+        👤
+    </span>
 
-            Account
+    Account
 
-        </a>
-
+</a>
     </div>
 
 </nav>
