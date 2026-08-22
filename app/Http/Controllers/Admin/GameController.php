@@ -65,11 +65,13 @@ class GameController extends Controller
 
 
     /**
-     * Simpan game baru.
+     * Validasi bersama untuk store & update.
      */
-    public function store(Request $request)
-    {
-        $validated = $request->validate([
+    protected function validatedData(
+        Request $request,
+        ?Game $game = null
+    ) {
+        return $request->validate([
 
             'name' => [
                 'required',
@@ -81,7 +83,14 @@ class GameController extends Controller
                 'nullable',
                 'string',
                 'max:255',
-                'unique:games,slug',
+                $game
+                    ? Rule::unique('games', 'slug')->ignore($game->id)
+                    : 'unique:games,slug',
+            ],
+
+            'description' => [
+                'nullable',
+                'string',
             ],
 
             'status' => [
@@ -92,42 +101,87 @@ class GameController extends Controller
                 ]),
             ],
 
-            'minimum_bet' => [
+            'icon' => [
+                'nullable',
+                'image',
+                'mimes:jpeg,png,webp',
+                'max:2048',
+            ],
+
+            'banner' => [
+                'nullable',
+                'image',
+                'mimes:jpeg,png,webp',
+                'max:2048',
+            ],
+
+            'configuration' => [
+                'required',
+                'array',
+            ],
+
+            'configuration.minimum_bet' => [
                 'required',
                 'numeric',
                 'min:1',
             ],
 
-            'maximum_bet' => [
+            'configuration.maximum_bet' => [
                 'required',
                 'numeric',
-                'gte:minimum_bet',
+                'gte:configuration.minimum_bet',
             ],
 
-            'normal_rate' => [
-                'required',
-                'numeric',
-                'min:0',
-            ],
-
-            'special_rate' => [
+            'configuration.normal_rate' => [
                 'required',
                 'numeric',
                 'min:0',
             ],
 
-            'special_duration' => [
+            'configuration.special_rate' => [
+                'required',
+                'numeric',
+                'min:0',
+            ],
+
+            'configuration.special_duration' => [
                 'required',
                 'integer',
                 'min:1',
             ],
 
-            'special_times' => [
+            'configuration.round_duration' => [
+                'nullable',
+                'integer',
+                'min:1',
+            ],
+
+            'configuration.max_rounds' => [
+                'nullable',
+                'integer',
+                'min:1',
+            ],
+
+            'configuration.special_times' => [
+                'nullable',
+                'array',
+            ],
+
+            'configuration.special_times.*' => [
                 'nullable',
                 'string',
             ],
 
         ]);
+    }
+
+
+    /**
+     * Simpan game baru.
+     */
+    public function store(Request $request)
+    {
+        $validated = $this->validatedData($request);
 
 
         /*
@@ -157,34 +211,27 @@ class GameController extends Controller
 
 
         /*
-         * Ubah special times menjadi array.
-         *
-         * Contoh input:
-         *
-         * 14:30
-         * 20:00
+         * Bersihkan special times (buang value kosong).
          */
-        $specialTimes = [];
+        $specialTimes = collect(
+            $validated['configuration']['special_times'] ?? []
+        )
+            ->map(fn ($time) => trim((string) $time))
+            ->filter()
+            ->values()
+            ->toArray();
 
-        if (
-            !empty(
-                $validated['special_times']
-            )
-        ) {
 
-            $specialTimes = collect(
-                preg_split(
-                    '/[\r\n,]+/',
-                    $validated['special_times']
-                )
-            )
-                ->map(
-                    fn ($time) => trim($time)
-                )
-                ->filter()
-                ->values()
-                ->toArray();
-        }
+        /*
+         * Upload icon & banner (jika ada).
+         */
+        $iconPath = $request->hasFile('icon')
+            ? $request->file('icon')->store('games/icons', 'public')
+            : null;
+
+        $bannerPath = $request->hasFile('banner')
+            ? $request->file('banner')->store('games/banners', 'public')
+            : null;
 
 
         /*
@@ -193,19 +240,29 @@ class GameController extends Controller
         $configuration = [
 
             'minimum_bet' =>
-                (float) $validated['minimum_bet'],
+                (float) $validated['configuration']['minimum_bet'],
 
             'maximum_bet' =>
-                (float) $validated['maximum_bet'],
+                (float) $validated['configuration']['maximum_bet'],
 
             'normal_rate' =>
-                (float) $validated['normal_rate'],
+                (float) $validated['configuration']['normal_rate'],
 
             'special_rate' =>
-                (float) $validated['special_rate'],
+                (float) $validated['configuration']['special_rate'],
 
             'special_duration' =>
-                (int) $validated['special_duration'],
+                (int) $validated['configuration']['special_duration'],
+
+            'round_duration' =>
+                isset($validated['configuration']['round_duration'])
+                    ? (int) $validated['configuration']['round_duration']
+                    : null,
+
+            'max_rounds' =>
+                isset($validated['configuration']['max_rounds'])
+                    ? (int) $validated['configuration']['max_rounds']
+                    : null,
 
             'special_times' =>
                 $specialTimes,
@@ -220,8 +277,17 @@ class GameController extends Controller
             'slug' =>
                 $slug,
 
+            'description' =>
+                $validated['description'] ?? null,
+
             'status' =>
                 $validated['status'],
+
+            'icon' =>
+                $iconPath,
+
+            'banner' =>
+                $bannerPath,
 
             'configuration' =>
                 $configuration,
@@ -276,68 +342,7 @@ class GameController extends Controller
         Game $game
     ) {
 
-        $validated = $request->validate([
-
-            'name' => [
-                'required',
-                'string',
-                'max:255',
-            ],
-
-            'slug' => [
-                'nullable',
-                'string',
-                'max:255',
-                Rule::unique(
-                    'games',
-                    'slug'
-                )->ignore($game->id),
-            ],
-
-            'status' => [
-                'required',
-                Rule::in([
-                    'active',
-                    'inactive',
-                ]),
-            ],
-
-            'minimum_bet' => [
-                'required',
-                'numeric',
-                'min:1',
-            ],
-
-            'maximum_bet' => [
-                'required',
-                'numeric',
-                'gte:minimum_bet',
-            ],
-
-            'normal_rate' => [
-                'required',
-                'numeric',
-                'min:0',
-            ],
-
-            'special_rate' => [
-                'required',
-                'numeric',
-                'min:0',
-            ],
-
-            'special_duration' => [
-                'required',
-                'integer',
-                'min:1',
-            ],
-
-            'special_times' => [
-                'nullable',
-                'string',
-            ],
-
-        ]);
+        $validated = $this->validatedData($request, $game);
 
 
         /*
@@ -376,29 +381,28 @@ class GameController extends Controller
 
 
         /*
-         * Special times.
+         * Bersihkan special times (buang value kosong).
          */
-        $specialTimes = [];
+        $specialTimes = collect(
+            $validated['configuration']['special_times'] ?? []
+        )
+            ->map(fn ($time) => trim((string) $time))
+            ->filter()
+            ->values()
+            ->toArray();
 
-        if (
-            !empty(
-                $validated['special_times']
-            )
-        ) {
 
-            $specialTimes = collect(
-                preg_split(
-                    '/[\r\n,]+/',
-                    $validated['special_times']
-                )
-            )
-                ->map(
-                    fn ($time) => trim($time)
-                )
-                ->filter()
-                ->values()
-                ->toArray();
-        }
+        /*
+         * Upload icon & banner (jika ada file baru,
+         * kalau tidak, pakai yang lama).
+         */
+        $iconPath = $request->hasFile('icon')
+            ? $request->file('icon')->store('games/icons', 'public')
+            : $game->icon;
+
+        $bannerPath = $request->hasFile('banner')
+            ? $request->file('banner')->store('games/banners', 'public')
+            : $game->banner;
 
 
         /*
@@ -407,19 +411,29 @@ class GameController extends Controller
         $configuration = [
 
             'minimum_bet' =>
-                (float) $validated['minimum_bet'],
+                (float) $validated['configuration']['minimum_bet'],
 
             'maximum_bet' =>
-                (float) $validated['maximum_bet'],
+                (float) $validated['configuration']['maximum_bet'],
 
             'normal_rate' =>
-                (float) $validated['normal_rate'],
+                (float) $validated['configuration']['normal_rate'],
 
             'special_rate' =>
-                (float) $validated['special_rate'],
+                (float) $validated['configuration']['special_rate'],
 
             'special_duration' =>
-                (int) $validated['special_duration'],
+                (int) $validated['configuration']['special_duration'],
+
+            'round_duration' =>
+                isset($validated['configuration']['round_duration'])
+                    ? (int) $validated['configuration']['round_duration']
+                    : null,
+
+            'max_rounds' =>
+                isset($validated['configuration']['max_rounds'])
+                    ? (int) $validated['configuration']['max_rounds']
+                    : null,
 
             'special_times' =>
                 $specialTimes,
@@ -434,8 +448,17 @@ class GameController extends Controller
             'slug' =>
                 $slug,
 
+            'description' =>
+                $validated['description'] ?? null,
+
             'status' =>
                 $validated['status'],
+
+            'icon' =>
+                $iconPath,
+
+            'banner' =>
+                $bannerPath,
 
             'configuration' =>
                 $configuration,
